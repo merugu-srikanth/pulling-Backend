@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "cronExpression": "22 17 * * *",
+  "lastRun": "2026-07-07T11:52:00.948Z",
+  "nextRun": null,
+  "retryCount": 3,
+  "retryDelay": 5000
+}
