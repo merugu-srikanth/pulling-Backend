@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { FileManager } from "../utils/fileManager";
-import { exportJobsToExcel, exportAICTEInternshipsToExcel } from "../services/export.service";
+import { exportJobsToExcel, exportAICTEInternshipsToExcel, exportNPTELToExcel } from "../services/export.service";
 
 export const getJobs = (req: Request, res: Response) => {
   let jobs = FileManager.getJobs();
@@ -76,6 +76,16 @@ export const exportAICTEJobs = (req: Request, res: Response) => {
     const { source } = req.query;
     if (source) jobs = jobs.filter((j: any) => j.source === String(source));
     const filePath = exportAICTEInternshipsToExcel(jobs);
+    res.download(filePath);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const exportNPTELJobs = (_req: Request, res: Response) => {
+  try {
+    const jobs = FileManager.getJobs();
+    const filePath = exportNPTELToExcel(jobs);
     res.download(filePath);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

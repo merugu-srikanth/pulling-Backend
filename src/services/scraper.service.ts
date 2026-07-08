@@ -4,9 +4,16 @@ import { detectType } from "../utils/detector";
 import { scrapeHTML } from "./htmlScraper.service";
 import { scrapeXML } from "./xmlScraper.service";
 import { scrapeAICTE, isAicteUrl, scrapeAICTERecent, isAicteRecentUrl } from "./aicteScraper.service";
+import { scrapeNPTEL, isNptelUrl } from "./nptelScraper.service";
 
 async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null }> {
   try {
+    // NPTEL courses portal — dedicated structured scraper
+    if (isNptelUrl(website.url)) {
+      const jobs = await scrapeNPTEL(website.url);
+      return { jobs, error: null };
+    }
+
     // AICTE recently-posted page — AJAX-based, active-only scraper
     if (isAicteRecentUrl(website.url)) {
       const jobs = await scrapeAICTERecent(website.url);

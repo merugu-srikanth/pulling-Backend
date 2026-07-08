@@ -110,6 +110,51 @@ export function exportJobsToExcel(jobs: any[]): string {
   return filePath;
 }
 
+export function exportNPTELToExcel(jobs: any[]): string {
+  const nptelJobs = jobs.filter((j: any) => j.source === "nptel.ac.in");
+
+  const rows = nptelJobs.map((j: any) => ({
+    course_id:       j.courseId      || "",
+    course_title:    (j.title || "").replace(/^NOC:/, "").trim(),
+    professor:       j.professor     || "",
+    institution:     j.organization  || "",
+    discipline:      j.discipline    || "",
+    content_type:    j.contentType   || "",
+    noc_course:      j.noccourse     ? "Yes" : "No",
+    self_paced:      j.selfPaced     ? "Yes" : "No",
+    currently_open:  j.currentRun    ? "Yes" : "No",
+    enroll_now_link: j.applyLink     || "",
+    scraped_at:      j.scrapedAt     || "",
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  ws["!cols"] = [
+    { wch: 14 },  // course_id
+    { wch: 55 },  // course_title
+    { wch: 30 },  // professor
+    { wch: 22 },  // institution
+    { wch: 28 },  // discipline
+    { wch: 14 },  // content_type
+    { wch: 12 },  // noc_course
+    { wch: 12 },  // self_paced
+    { wch: 15 },  // currently_open
+    { wch: 60 },  // enroll_now_link
+    { wch: 22 },  // scraped_at
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "NPTEL Courses");
+
+  const exportDir = process.env.VERCEL ? "/tmp/scraper-exports" : path.join(__dirname, "../data/exports");
+  if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true });
+
+  const filename = `nptel_courses_${Date.now()}.xlsx`;
+  const filePath = path.join(exportDir, filename);
+  XLSX.writeFile(wb, filePath);
+  return filePath;
+}
+
 export function parseWebsitesExcel(filePath: string): any[] {
   const wb = XLSX.readFile(filePath);
   const ws = wb.Sheets[wb.SheetNames[0]];
