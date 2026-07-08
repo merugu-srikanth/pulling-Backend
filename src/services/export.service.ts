@@ -114,17 +114,26 @@ export function exportNPTELToExcel(jobs: any[]): string {
   const nptelJobs = jobs.filter((j: any) => j.source === "nptel.ac.in");
 
   const rows = nptelJobs.map((j: any) => ({
-    course_id:       j.courseId      || "",
-    course_title:    (j.title || "").replace(/^NOC:/, "").trim(),
-    professor:       j.professor     || "",
-    institution:     j.organization  || "",
-    discipline:      j.discipline    || "",
-    content_type:    j.contentType   || "",
-    noc_course:      j.noccourse     ? "Yes" : "No",
-    self_paced:      j.selfPaced     ? "Yes" : "No",
-    currently_open:  j.currentRun    ? "Yes" : "No",
-    enroll_now_link: j.applyLink     || "",
-    scraped_at:      j.scrapedAt     || "",
+    course_id:           j.courseId          || "",
+    course_title:        (j.title || "").replace(/^NOC:/, "").trim(),
+    professor:           j.professor         || "",
+    institution:         j.organization      || "",
+    discipline:          j.discipline        || "",
+    content_type:        j.contentType       || "",
+    duration:            j.duration          || "",
+    course_duration:     j.courseDuration    || "",
+    credits:             j.credits           || "",
+    level:               j.level             || "",
+    language:            j.language          || "",
+    noc_course:          j.noccourse         ? "Yes" : "No",
+    self_paced:          j.selfPaced         ? "Yes" : "No",
+    enrollment_start:    j.enrollmentStart   || "",
+    enrollment_end:      j.enrollmentEnd     || "",
+    exam_reg_start:      j.examRegStart      || "",
+    exam_reg_end:        j.examRegEnd        || "",
+    exam_date:           j.examDate          || "",
+    enroll_now_link:     j.applyLink         || "",
+    scraped_at:          j.scrapedAt         || "",
   }));
 
   const wb = XLSX.utils.book_new();
@@ -137,9 +146,18 @@ export function exportNPTELToExcel(jobs: any[]): string {
     { wch: 22 },  // institution
     { wch: 28 },  // discipline
     { wch: 14 },  // content_type
+    { wch: 12 },  // duration
+    { wch: 16 },  // course_duration
+    { wch: 10 },  // credits
+    { wch: 16 },  // level
+    { wch: 12 },  // language
     { wch: 12 },  // noc_course
     { wch: 12 },  // self_paced
-    { wch: 15 },  // currently_open
+    { wch: 18 },  // enrollment_start
+    { wch: 18 },  // enrollment_end
+    { wch: 18 },  // exam_reg_start
+    { wch: 18 },  // exam_reg_end
+    { wch: 22 },  // exam_date
     { wch: 60 },  // enroll_now_link
     { wch: 22 },  // scraped_at
   ];
