@@ -73,29 +73,36 @@ export function exportAICTEInternshipsToExcel(jobs: any[]): string {
 }
 
 export function exportJobsToExcel(jobs: any[]): string {
-  const rows = jobs.map((j) => ({
-    Title: j.title,
-    Organization: j.organization,
-    Vacancies: j.vacancies,
-    Qualification: j.qualification,
-    "Last Date": j.lastDate,
-    "Apply Link": j.applyLink,
-    Source: j.source,
-    "Scraped At": j.scrapedAt,
-  }));
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-
-  ws["!cols"] = [
-    { wch: 50 }, { wch: 30 }, { wch: 12 }, { wch: 20 },
-    { wch: 15 }, { wch: 40 }, { wch: 25 }, { wch: 22 },
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, "Jobs");
-
   const exportDir = process.env.VERCEL ? "/tmp/scraper-exports" : path.join(__dirname, "../data/exports");
   if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true });
+
+  const PRIORITY = ["title", "organization", "vacancies", "qualification", "lastDate", "applyLink", "source", "scrapedAt",
+    "internshipType", "location", "startDate", "duration", "stipend", "stipendCategory", "numberOfCredits", "numberOfOpenings", "postedDate"];
+
+  // Collect every key that appears in ANY job (excluding internal id)
+  const allKeys = new Set<string>();
+  for (const j of jobs) Object.keys(j).forEach(k => k !== "id" && allKeys.add(k));
+
+  const orderedKeys = [
+    ...PRIORITY.filter(k => allKeys.has(k)),
+    ...[...allKeys].filter(k => !PRIORITY.includes(k) && k !== "id"),
+  ];
+
+  const rows = jobs.map(j => {
+    const row: Record<string, any> = {};
+    for (const k of orderedKeys) row[k] = j[k] ?? "";
+    return row;
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows, { header: orderedKeys });
+
+  // Auto-width: max 60 chars
+  ws["!cols"] = orderedKeys.map(k => ({
+    wch: Math.min(60, Math.max(k.length + 4, ...rows.slice(0, 50).map(r => String(r[k] ?? "").length + 2)))
+  }));
+
+  XLSX.utils.book_append_sheet(wb, ws, "Jobs");
 
   const filename = `jobs_${Date.now()}.xlsx`;
   const filePath = path.join(exportDir, filename);

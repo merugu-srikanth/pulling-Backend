@@ -52,9 +52,17 @@ export const deleteAllJobs = (_req: Request, res: Response) => {
   res.json({ deleted: jobs.length });
 };
 
-export const exportJobs = (_req: Request, res: Response) => {
+export const getJobSources = (_req: Request, res: Response) => {
+  const jobs = FileManager.getJobs();
+  const sources = [...new Set(jobs.map((j: any) => j.source).filter(Boolean))].sort();
+  res.json(sources);
+};
+
+export const exportJobs = (req: Request, res: Response) => {
   try {
-    const jobs = FileManager.getJobs();
+    let jobs = FileManager.getJobs();
+    const { source } = req.query;
+    if (source) jobs = jobs.filter((j: any) => j.source === String(source));
     const filePath = exportJobsToExcel(jobs);
     res.download(filePath);
   } catch (err: any) {
@@ -62,9 +70,11 @@ export const exportJobs = (_req: Request, res: Response) => {
   }
 };
 
-export const exportAICTEJobs = (_req: Request, res: Response) => {
+export const exportAICTEJobs = (req: Request, res: Response) => {
   try {
-    const jobs = FileManager.getJobs();
+    let jobs = FileManager.getJobs();
+    const { source } = req.query;
+    if (source) jobs = jobs.filter((j: any) => j.source === String(source));
     const filePath = exportAICTEInternshipsToExcel(jobs);
     res.download(filePath);
   } catch (err: any) {
