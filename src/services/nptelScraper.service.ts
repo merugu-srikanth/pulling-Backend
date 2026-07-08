@@ -237,6 +237,8 @@ function toJob(c: any, dates: CourseDates, meta: Record<string, string>): any {
 /* ─── Main export ────────────────────────────────────────────────────────── */
 export async function scrapeNPTEL(_url: string): Promise<any[]> {
   const today = new Date().toISOString().split("T")[0];
+  // Vercel free tier kills functions after 10s — skip detail fetching there
+  const isVercel = !!process.env.VERCEL;
 
   // ── Phase 1: get all courses from listing ──
   console.log("[NPTEL] Fetching course listing...");
@@ -244,7 +246,7 @@ export async function scrapeNPTEL(_url: string): Promise<any[]> {
   try {
     const { data: raw } = await axios.get(`${BASE}/courses/__data.json`, {
       headers: { ...HEADERS, Accept: "application/json" },
-      timeout: 30000,
+      timeout: isVercel ? 8000 : 30000,
     });
     courses = decodeListing(raw);
     console.log(`[NPTEL] Listing decoded: ${courses.length} courses`);
@@ -255,7 +257,7 @@ export async function scrapeNPTEL(_url: string): Promise<any[]> {
   // ── HTML fallback (gets 50-100 visible cards) ──
   if (courses.length === 0) {
     console.log("[NPTEL] HTML fallback...");
-    const { data: html } = await axios.get(`${BASE}/courses`, { headers: HEADERS, timeout: 30000 });
+    const { data: html } = await axios.get(`${BASE}/courses`, { headers: HEADERS, timeout: isVercel ? 7000 : 30000 });
     const $ = cheerio.load(html);
     const seen = new Set<string>();
     $("a[href]").each((_, el) => {
@@ -284,7 +286,14 @@ export async function scrapeNPTEL(_url: string): Promise<any[]> {
 
   if (!courses.length) return [];
 
-  // ── Phase 2: fetch individual course details for dates ──
+  // ── Vercel mode: listing only (no detail pages — 10s function limit) ──
+  if (isVercel) {
+    const active = courses.filter((c: any) => c.currentRun || c.selfPaced);
+    console.log(`[NPTEL] Vercel mode: ${active.length} active/self-paced courses (no date enrichment)`);
+    return active.map((c: any) => toJob(c, {} as CourseDates, {}));
+  }
+
+  // ── Phase 2: fetch individual course details for dates (local only) ──
   console.log(`[NPTEL] Fetching details for ${courses.length} courses (${CONCURRENCY} concurrent)...`);
   const courseIds = courses.map((c: any) => c.courseId).filter(Boolean);
   const detailMap = await fetchAllDetails(courseIds);
