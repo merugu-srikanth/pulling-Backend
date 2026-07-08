@@ -63,7 +63,7 @@ export function exportAICTEInternshipsToExcel(jobs: any[]): string {
 
   XLSX.utils.book_append_sheet(wb, ws, "AICTE Internships");
 
-  const exportDir = path.join(__dirname, "../data/exports");
+  const exportDir = process.env.VERCEL ? "/tmp/scraper-exports" : path.join(__dirname, "../data/exports");
   if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true });
 
   const filename = `aicte_internships_${Date.now()}.xlsx`;
@@ -94,7 +94,7 @@ export function exportJobsToExcel(jobs: any[]): string {
 
   XLSX.utils.book_append_sheet(wb, ws, "Jobs");
 
-  const exportDir = path.join(__dirname, "../data/exports");
+  const exportDir = process.env.VERCEL ? "/tmp/scraper-exports" : path.join(__dirname, "../data/exports");
   if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true });
 
   const filename = `jobs_${Date.now()}.xlsx`;

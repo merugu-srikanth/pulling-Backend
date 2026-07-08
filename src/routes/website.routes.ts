@@ -3,7 +3,8 @@ import multer from "multer";
 import path from "path";
 import { getWebsites, addWebsite, deleteWebsite, uploadWebsites } from "../controllers/website.controller";
 
-const upload = multer({ dest: path.join(__dirname, "../data/uploads/") });
+const UPLOAD_DIR = process.env.VERCEL ? "/tmp/scraper-uploads" : path.join(__dirname, "../data/uploads");
+const upload = multer({ dest: UPLOAD_DIR });
 const router = express.Router();
 
 router.get("/websites", getWebsites);
