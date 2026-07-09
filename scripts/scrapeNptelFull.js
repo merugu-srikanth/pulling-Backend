@@ -26,7 +26,8 @@ const fs      = require("fs");
 const BASE         = "https://nptel.ac.in";
 const CONCURRENCY  = 6;    // parallel requests per batch
 const BATCH_DELAY  = 350;  // ms between batches (be polite)
-const OUTPUT       = path.join(__dirname, "nptel_all_courses.xlsx");
+// Save to project root (one level up from backend/)
+const OUTPUT       = path.join(__dirname, "../../nptel_all_courses.xlsx");
 
 const HEADERS = {
   "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -142,41 +143,48 @@ function parseCertHtml(html) {
 
 /* ── Phase 2b: Parse course __data.json for meta + abstract ───────────── */
 function parseDetailJson(raw) {
-  const out = { certHtml: "", abstract: "", meta: {} };
+  const out = { certHtml: "", abstract: "", syllabus: "", meta: {}, youtubeUrl: "" };
   try {
     const node = raw?.nodes?.[1];
     if (!node) return out;
     const data = node.data ?? [];
 
     let maxCertLen = 0;
-    let maxAbstractLen = 0;
+    const plainTexts = [];  // collect all long plain strings
 
     for (const item of data) {
       if (typeof item !== "string") continue;
 
-      // certificationHtml: contains exam/enrollment keywords
+      // certificationHtml: HTML block with exam/enrollment keywords
       if (
+        item.includes("<") &&
         item.length > maxCertLen &&
         (item.includes("Date and Time") || item.includes("proctored") ||
          item.includes("enrollment") || item.includes("certificate") ||
-         item.includes("Enrollment"))
+         item.includes("Enrollment") || item.includes("exam"))
       ) {
         out.certHtml = item;
         maxCertLen = item.length;
       }
 
-      // Abstract: long plain-text paragraph (no HTML angle brackets)
-      if (
-        item.length > 200 && item.length > maxAbstractLen &&
-        !item.includes("<") && !item.includes("http") &&
-        item.split(" ").length > 20
-      ) {
-        out.abstract = item;
-        maxAbstractLen = item.length;
+      // YouTube URL in any string
+      if (!out.youtubeUrl) {
+        const ytMatch = item.match(/(?:youtube\.com\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+        if (ytMatch) out.youtubeUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
+      }
+
+      // Collect long plain-text candidates (abstract / syllabus)
+      if (item.length > 150 && !item.includes("<") && !item.startsWith("http")) {
+        plainTexts.push(item);
       }
     }
 
-    // Decode meta array for duration, credits, level, language, type
+    // Sort by length desc; first long string is usually abstract, second syllabus
+    plainTexts.sort((a, b) => b.length - a.length);
+    if (plainTexts[0]) out.abstract  = plainTexts[0].trim().substring(0, 3000);
+    if (plainTexts[1]) out.syllabus  = plainTexts[1].trim().substring(0, 4000);
+
+    // Decode meta array: data[0].meta → [{label, value}]
     const root = data[0];
     if (root && typeof root === "object" && !Array.isArray(root)) {
       const metaArr = sv(data, root.meta);
@@ -359,9 +367,12 @@ async function fetchCourse(courseId) {
       level:           detail.meta["level"]     || "",
       language:        detail.meta["language"]  || "",
       courseType:      detail.meta["type"]      || "",
-      abstract:        (htmlOut.abstract  || detail.abstract || "").substring(0, 3000),
-      syllabusText:    syllabusText,
-      youtubeUrl:      htmlOut.youtubeUrl  || "",
+      // Abstract: prefer HTML section parse, fallback to __data.json long text
+      abstract:        (htmlOut.abstract || detail.abstract || "").substring(0, 3000),
+      // Syllabus: prefer dedicated tab fetch, fallback to __data.json plain text, fallback to HTML parse
+      syllabusText:    (syllabusText || detail.syllabus || "").substring(0, 4000),
+      // YouTube: prefer __data.json embed URL, fallback to HTML iframe
+      youtubeUrl:      detail.youtubeUrl || htmlOut.youtubeUrl || "",
       taList:          htmlOut.taList      || "",
       statistics:      htmlOut.statistics  || "",
       downloads:       htmlOut.downloads   || "",
