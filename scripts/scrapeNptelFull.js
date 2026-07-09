@@ -149,23 +149,41 @@ function parseDetailJson(raw) {
     if (!node) return out;
     const data = node.data ?? [];
 
-    let maxCertLen = 0;
-    const plainTexts = [];  // collect all long plain strings
+    // Navigate: data[0].courseOutline → courseObj → courseObj.syllabus → syllabusObj
+    const pageRoot = data[0];
+    const courseObj = sv(data, pageRoot?.courseOutline);
+    const syllabusObj = sv(data, courseObj?.syllabus);
 
+    // Get certificationHtml directly from syllabusObj
+    const rawCertHtml = sv(data, syllabusObj?.certificationHtml);
+    if (typeof rawCertHtml === "string") {
+      out.certHtml = rawCertHtml;
+    }
+
+    // Get abstract from syllabusObj.aboutHtml
+    const rawAboutHtml = sv(data, syllabusObj?.aboutHtml);
+    if (typeof rawAboutHtml === "string" && rawAboutHtml.length > 50) {
+      const $ = require("cheerio").load(rawAboutHtml);
+      out.abstract = $("body").text().replace(/\s+/g, " ").trim().substring(0, 3000);
+    }
+
+    // Decode meta from syllabusObj.meta (Duration, Credits, Level, Type, Language)
+    const metaArr = sv(data, syllabusObj?.meta);
+    if (Array.isArray(metaArr)) {
+      for (const itemRef of metaArr) {
+        const item = sv(data, itemRef);
+        if (item && typeof item === "object" && !Array.isArray(item)) {
+          const label = svStr(data, item.label).toLowerCase().trim();
+          const value = svStr(data, item.value).trim();
+          if (label && value) out.meta[label] = value;
+        }
+      }
+    }
+
+    // Fallback: brute-force search if certHtml or abstract still missing
+    const plainTexts = [];
     for (const item of data) {
       if (typeof item !== "string") continue;
-
-      // certificationHtml: HTML block with exam/enrollment keywords
-      if (
-        item.includes("<") &&
-        item.length > maxCertLen &&
-        (item.includes("Date and Time") || item.includes("proctored") ||
-         item.includes("enrollment") || item.includes("certificate") ||
-         item.includes("Enrollment") || item.includes("exam"))
-      ) {
-        out.certHtml = item;
-        maxCertLen = item.length;
-      }
 
       // YouTube URL in any string
       if (!out.youtubeUrl) {
@@ -173,31 +191,24 @@ function parseDetailJson(raw) {
         if (ytMatch) out.youtubeUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
       }
 
-      // Collect long plain-text candidates (abstract / syllabus)
-      if (item.length > 150 && !item.includes("<") && !item.startsWith("http")) {
+      // Fallback certHtml if not found via syllabus path
+      if (!out.certHtml && item.includes("<") &&
+         (item.includes("Date and Time") || item.includes("proctored") ||
+          item.includes("enrollment") || item.includes("certificate"))) {
+        out.certHtml = item;
+      }
+
+      // Collect long plain-text for abstract/syllabus fallback
+      if (!out.abstract && item.length > 150 && !item.includes("<") && !item.startsWith("http")) {
         plainTexts.push(item);
       }
     }
 
-    // Sort by length desc; first long string is usually abstract, second syllabus
-    plainTexts.sort((a, b) => b.length - a.length);
-    if (plainTexts[0]) out.abstract  = plainTexts[0].trim().substring(0, 3000);
-    if (plainTexts[1]) out.syllabus  = plainTexts[1].trim().substring(0, 4000);
-
-    // Decode meta array: data[0].meta → [{label, value}]
-    const root = data[0];
-    if (root && typeof root === "object" && !Array.isArray(root)) {
-      const metaArr = sv(data, root.meta);
-      if (Array.isArray(metaArr)) {
-        for (const itemRef of metaArr) {
-          const item = sv(data, itemRef);
-          if (item && typeof item === "object" && !Array.isArray(item)) {
-            const label = svStr(data, item.label).toLowerCase().trim();
-            const value = svStr(data, item.value).trim();
-            if (label && value) out.meta[label] = value;
-          }
-        }
-      }
+    // Use plain text fallbacks if structured extraction didn't get them
+    if (!out.abstract && plainTexts.length) {
+      plainTexts.sort((a, b) => b.length - a.length);
+      out.abstract = plainTexts[0].trim().substring(0, 3000);
+      if (plainTexts[1]) out.syllabus = plainTexts[1].trim().substring(0, 4000);
     }
   } catch {}
   return out;

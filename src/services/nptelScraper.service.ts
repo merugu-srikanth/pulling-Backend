@@ -142,30 +142,39 @@ async function fetchDetail(courseId: string): Promise<{ dates: CourseDates; meta
     if (!node) return { dates: empty, meta: {} };
     const data: any[] = node.data ?? [];
 
-    // Find certificationHtml: the longest string containing "exam"
-    let certHtml = "";
-    let maxLen = 0;
-    for (const item of data) {
-      if (typeof item === "string" && item.length > maxLen &&
-         (item.includes("Date and Time") || item.includes("proctored") || item.includes("enrollment") || item.includes("certificate"))) {
-        certHtml = item;
-        maxLen = item.length;
+    // Navigate: data[0].courseOutline → courseObj → courseObj.syllabus → syllabusObj
+    const pageRoot = data[0];
+    const courseObj = sv(data, pageRoot?.courseOutline);
+    const syllabusObj = sv(data, courseObj?.syllabus);
+
+    // Get certificationHtml directly from syllabus
+    let certHtml: string = "";
+    const rawCertHtml = sv(data, syllabusObj?.certificationHtml);
+    if (typeof rawCertHtml === "string") {
+      certHtml = rawCertHtml;
+    } else {
+      // Fallback: brute-force search for the certification HTML block
+      let maxLen = 0;
+      for (const item of data) {
+        if (typeof item === "string" && item.length > maxLen &&
+           (item.includes("Date and Time") || item.includes("proctored") ||
+            item.includes("enrollment") || item.includes("certificate"))) {
+          certHtml = item;
+          maxLen = item.length;
+        }
       }
     }
 
-    // Decode meta array: data[0].meta → array index → [{label, value}]
+    // Decode meta array from syllabusObj.meta (labels: Duration, Credits, Level, Type, Language)
     const meta: Record<string, string> = {};
-    const root = data[0];
-    if (root && typeof root === "object") {
-      const metaArr = sv(data, root.meta);
-      if (Array.isArray(metaArr)) {
-        for (const itemRef of metaArr) {
-          const item = sv(data, itemRef);
-          if (item && typeof item === "object") {
-            const label = String(sv(data, item.label) ?? "").toLowerCase().trim();
-            const value = String(sv(data, item.value) ?? "").trim();
-            if (label && value) meta[label] = value;
-          }
+    const metaArr = sv(data, syllabusObj?.meta);
+    if (Array.isArray(metaArr)) {
+      for (const itemRef of metaArr) {
+        const item = sv(data, itemRef);
+        if (item && typeof item === "object") {
+          const label = String(sv(data, item.label) ?? "").toLowerCase().trim();
+          const value = String(sv(data, item.value) ?? "").trim();
+          if (label && value) meta[label] = value;
         }
       }
     }
