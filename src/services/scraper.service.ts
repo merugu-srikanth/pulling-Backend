@@ -83,10 +83,17 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
   }
 
   if (jobs.length > 0) {
+    const jobSource = jobs[0]?.source as string | undefined;
     const existing = FileManager.getJobs();
-    const existingTitles = new Set(existing.map((j: any) => j.title.toLowerCase()));
-    const newJobs = jobs.filter((j: any) => !existingTitles.has(j.title.toLowerCase()));
-    FileManager.saveJobs([...newJobs, ...existing]);
+    if (jobSource) {
+      // Replace all existing jobs from this source with the fresh scrape
+      const kept = existing.filter((j: any) => j.source !== jobSource);
+      FileManager.saveJobs([...jobs, ...kept]);
+    } else {
+      const existingTitles = new Set(existing.map((j: any) => j.title.toLowerCase()));
+      const newJobs = jobs.filter((j: any) => !existingTitles.has(j.title.toLowerCase()));
+      FileManager.saveJobs([...newJobs, ...existing]);
+    }
   }
 
   return { success: !error, jobsFound: jobs.length, error };

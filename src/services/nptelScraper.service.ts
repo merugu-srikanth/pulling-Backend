@@ -132,41 +132,51 @@ async function fetchDetail(courseId: string): Promise<{ dates: CourseDates; meta
     examRegStart: "", examRegEnd: "", examDate: "",
     duration: "", credits: "", level: "", language: "", hasActiveReg: false,
   };
-  try {
-    const { data: raw } = await axios.get(`${BASE}/courses/${courseId}/__data.json`, {
+
+  // Run both requests in parallel:
+  // 1. /api/subject-details → enrollment/registration/exam dates
+  // 2. /courses/__data.json  → meta (credits, level, language, duration weeks, courseType)
+  const [subjectRes, detailRes] = await Promise.allSettled([
+    axios.get(`${BASE}/api/subject-details/${courseId}`, {
       headers: { ...HEADERS, Accept: "application/json" },
       timeout: 12000,
-    });
+    }),
+    axios.get(`${BASE}/courses/${courseId}/__data.json`, {
+      headers: { ...HEADERS, Accept: "application/json" },
+      timeout: 12000,
+    }),
+  ]);
 
-    const node = raw?.nodes?.[1];
-    if (!node) return { dates: empty, meta: {} };
-    const data: any[] = node.data ?? [];
+  // ── Dates from subject-details API ──
+  const dates: CourseDates = { ...empty };
+  if (subjectRes.status === "fulfilled") {
+    const d = subjectRes.value.data?.data;
+    if (d) {
+      if (d.enrollment && d.enrollment !== " to ") {
+        const parts = String(d.enrollment).split(" to ");
+        dates.enrollmentStart = parts[0]?.trim() || "";
+        dates.enrollmentEnd   = parts[1]?.trim() || "";
+      }
+      if (d.registration && d.registration !== " to ") {
+        const parts = String(d.registration).split(" to ");
+        dates.examRegStart = parts[0]?.trim() || "";
+        dates.examRegEnd   = parts[1]?.trim() || "";
+      }
+      dates.examDate      = String(d.exam      || "").trim();
+      dates.courseDuration = String(d.duration || "").trim();
+      dates.hasActiveReg  = !!dates.enrollmentStart || !!dates.examDate;
+    }
+  }
 
-    // Navigate: data[0].courseOutline → courseObj → courseObj.syllabus → syllabusObj
+  // ── Meta from __data.json (credits, level, language, duration weeks, type) ──
+  const meta: Record<string, string> = {};
+  if (detailRes.status === "fulfilled") {
+    const node = detailRes.value.data?.nodes?.[1];
+    const data: any[] = node?.data ?? [];
     const pageRoot = data[0];
     const courseObj = sv(data, pageRoot?.courseOutline);
     const syllabusObj = sv(data, courseObj?.syllabus);
 
-    // Get certificationHtml directly from syllabus
-    let certHtml: string = "";
-    const rawCertHtml = sv(data, syllabusObj?.certificationHtml);
-    if (typeof rawCertHtml === "string") {
-      certHtml = rawCertHtml;
-    } else {
-      // Fallback: brute-force search for the certification HTML block
-      let maxLen = 0;
-      for (const item of data) {
-        if (typeof item === "string" && item.length > maxLen &&
-           (item.includes("Date and Time") || item.includes("proctored") ||
-            item.includes("enrollment") || item.includes("certificate"))) {
-          certHtml = item;
-          maxLen = item.length;
-        }
-      }
-    }
-
-    // Decode meta array from syllabusObj.meta (labels: Duration, Credits, Level, Type, Language)
-    const meta: Record<string, string> = {};
     const metaArr = sv(data, syllabusObj?.meta);
     if (Array.isArray(metaArr)) {
       for (const itemRef of metaArr) {
@@ -179,10 +189,17 @@ async function fetchDetail(courseId: string): Promise<{ dates: CourseDates; meta
       }
     }
 
-    return { dates: parseCertHtml(certHtml), meta };
-  } catch {
-    return { dates: empty, meta: {} };
+    // Fallback exam date from certificationHtml if subject-details missed it
+    if (!dates.examDate) {
+      const rawCertHtml = sv(data, syllabusObj?.certificationHtml);
+      if (typeof rawCertHtml === "string") {
+        const certDates = parseCertHtml(rawCertHtml);
+        if (certDates.examDate) dates.examDate = certDates.examDate;
+      }
+    }
   }
+
+  return { dates, meta };
 }
 
 /* ─── Concurrency-limited batch fetcher ─────────────────────────────────── */
