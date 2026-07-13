@@ -21,20 +21,21 @@ export const scrapeAllWebsites = async (_req: Request, res: Response) => {
   }
 };
 
-export const getLogs = (_req: Request, res: Response) => {
-  const logs = FileManager.getLogs();
+export const getLogs = async (_req: Request, res: Response) => {
+  const logs = await FileManager.getLogs();
   res.json(logs.slice(0, 100));
 };
 
-export const getStats = (_req: Request, res: Response) => {
-  const jobs = FileManager.getJobs();
-  const websites = FileManager.getWebsites();
-  const logs = FileManager.getLogs();
+export const getStats = async (_req: Request, res: Response) => {
+  const [jobs, websites, logs] = await Promise.all([
+    FileManager.getJobs(),
+    FileManager.getWebsites(),
+    FileManager.getLogs(),
+  ]);
 
   const today = new Date().toISOString().split("T")[0];
   const todayJobs = jobs.filter((j: any) => j.scrapedAt?.startsWith(today));
   const successLogs = logs.filter((l: any) => l.status === "success");
-  const failedWebsites = websites.filter((w: any) => w.status === "error");
   const lastRun = logs[0]?.startTime || null;
   const successRate = logs.length > 0
     ? Math.round((successLogs.length / logs.length) * 100)
@@ -43,7 +44,7 @@ export const getStats = (_req: Request, res: Response) => {
   res.json({
     totalWebsites: websites.length,
     activeWebsites: websites.filter((w: any) => w.status === "active").length,
-    failedWebsites: failedWebsites.length,
+    failedWebsites: websites.filter((w: any) => w.status === "error").length,
     totalJobs: jobs.length,
     jobsToday: todayJobs.length,
     successRate,

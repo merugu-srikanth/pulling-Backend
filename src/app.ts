@@ -23,7 +23,7 @@ const swaggerSpec = {
     contact: { email: "merugusrikanth28@gmail.com" },
   },
   servers: [
-    { url: "https://apiscraping-xi.vercel.app", description: "Production" },
+    { url: "https://apicareerpull.vercel.app", description: "Production" },
     { url: "http://localhost:5000", description: "Local Development" },
   ],
   tags: [

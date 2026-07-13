@@ -8,19 +8,16 @@ import { scrapeNPTEL, isNptelUrl } from "./nptelScraper.service";
 
 async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null }> {
   try {
-    // NPTEL courses portal — dedicated structured scraper
     if (isNptelUrl(website.url)) {
       const jobs = await scrapeNPTEL(website.url);
       return { jobs, error: null };
     }
 
-    // AICTE recently-posted page — AJAX-based, active-only scraper
     if (isAicteRecentUrl(website.url)) {
       const jobs = await scrapeAICTERecent(website.url);
       return { jobs, error: null };
     }
 
-    // AICTE city-filtered internship portal — dedicated multi-page scraper
     if (isAicteUrl(website.url)) {
       const jobs = await scrapeAICTE(website.url);
       return { jobs, error: null };
@@ -42,7 +39,7 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
 }
 
 export async function scrapeWebsite(websiteId: string): Promise<any> {
-  const websites = FileManager.getWebsites();
+  const websites = await FileManager.getWebsites();
   const website = websites.find((w: any) => w.id === websiteId);
   if (!website) throw new Error("Website not found");
 
@@ -57,9 +54,9 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
     errorMessage: null,
   };
 
-  const logs = FileManager.getLogs();
+  const logs = await FileManager.getLogs();
   logs.unshift(logEntry);
-  FileManager.saveLogs(logs);
+  await FileManager.saveLogs(logs);
 
   const { jobs, error } = await scrapeOne(website);
 
@@ -68,31 +65,31 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
   logEntry.jobsFound = jobs.length;
   logEntry.errorMessage = error;
 
-  const updatedLogs = FileManager.getLogs();
+  const updatedLogs = await FileManager.getLogs();
   const logIdx = updatedLogs.findIndex((l: any) => l.id === logEntry.id);
   if (logIdx >= 0) updatedLogs[logIdx] = logEntry;
-  FileManager.saveLogs(updatedLogs.slice(0, 500));
+  await FileManager.saveLogs(updatedLogs.slice(0, 500));
 
-  const websiteIdx = websites.findIndex((w: any) => w.id === websiteId);
+  const allWebsites = await FileManager.getWebsites();
+  const websiteIdx = allWebsites.findIndex((w: any) => w.id === websiteId);
   if (websiteIdx >= 0) {
-    websites[websiteIdx].lastScraped = new Date().toISOString();
-    websites[websiteIdx].status = error ? "error" : "active";
-    websites[websiteIdx].jobsFound = jobs.length;
-    websites[websiteIdx].errorMessage = error;
-    FileManager.saveWebsites(websites);
+    allWebsites[websiteIdx].lastScraped = new Date().toISOString();
+    allWebsites[websiteIdx].status = error ? "error" : "active";
+    allWebsites[websiteIdx].jobsFound = jobs.length;
+    allWebsites[websiteIdx].errorMessage = error;
+    await FileManager.saveWebsites(allWebsites);
   }
 
   if (jobs.length > 0) {
     const jobSource = jobs[0]?.source as string | undefined;
-    const existing = FileManager.getJobs();
+    const existing = await FileManager.getJobs();
     if (jobSource) {
-      // Replace all existing jobs from this source with the fresh scrape
       const kept = existing.filter((j: any) => j.source !== jobSource);
-      FileManager.saveJobs([...jobs, ...kept]);
+      await FileManager.saveJobs([...jobs, ...kept]);
     } else {
       const existingTitles = new Set(existing.map((j: any) => j.title.toLowerCase()));
       const newJobs = jobs.filter((j: any) => !existingTitles.has(j.title.toLowerCase()));
-      FileManager.saveJobs([...newJobs, ...existing]);
+      await FileManager.saveJobs([...newJobs, ...existing]);
     }
   }
 
@@ -100,7 +97,7 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
 }
 
 export async function scrapeAll(): Promise<any> {
-  const websites = FileManager.getWebsites().filter((w: any) => w.status !== "inactive");
+  const websites = (await FileManager.getWebsites()).filter((w: any) => w.status !== "inactive");
   const results = { total: websites.length, success: 0, failed: 0, totalJobs: 0 };
 
   for (const website of websites) {

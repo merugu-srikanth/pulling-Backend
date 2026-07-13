@@ -1,48 +1,74 @@
-import fs from "fs";
-import path from "path";
+import { connectDB } from "./db";
+import { JobModel, WebsiteModel, LogModel, SchedulerModel } from "../models/schemas";
 
-// Vercel has a read-only filesystem; only /tmp is writable in production
-const IS_VERCEL = !!process.env.VERCEL;
-const DATA_DIR = IS_VERCEL
-  ? "/tmp/scraper-data"
-  : path.join(__dirname, "../data");
-
-// Original bundled data dir (readable even on Vercel, but not writable)
-const BUNDLED_DATA_DIR = path.join(__dirname, "../data");
-
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function readJSON<T>(filename: string): T {
-  const filePath = path.join(DATA_DIR, filename);
-  if (fs.existsSync(filePath)) {
-    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
-  }
-  // Fallback: read from bundled data (committed files like scheduler.json)
-  const bundledPath = path.join(BUNDLED_DATA_DIR, filename);
-  if (fs.existsSync(bundledPath)) {
-    return JSON.parse(fs.readFileSync(bundledPath, "utf-8")) as T;
-  }
-  return [] as unknown as T;
-}
-
-function writeJSON<T>(filename: string, data: T): void {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  const filePath = path.join(DATA_DIR, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
-}
+const DEFAULT_SCHEDULER = {
+  enabled: true,
+  cronExpression: "22 17 * * *",
+  lastRun: null as string | null,
+  nextRun: null as string | null,
+  retryCount: 3,
+  retryDelay: 5000,
+};
 
 export const FileManager = {
-  getJobs: () => readJSON<any[]>("jobs.json"),
-  saveJobs: (data: any[]) => writeJSON("jobs.json", data),
+  async getJobs(): Promise<any[]> {
+    await connectDB();
+    return JobModel.find({}).select("-_id -__v").lean() as Promise<any[]>;
+  },
 
-  getWebsites: () => readJSON<any[]>("websites.json"),
-  saveWebsites: (data: any[]) => writeJSON("websites.json", data),
+  async saveJobs(data: any[]): Promise<void> {
+    await connectDB();
+    if (!data.length) {
+      await JobModel.deleteMany({});
+      return;
+    }
+    const ids = data.map((j) => j.id).filter(Boolean);
+    const ops: any[] = data.map((job) => ({
+      updateOne: {
+        filter: { id: job.id },
+        update: { $set: job },
+        upsert: true,
+      },
+    }));
+    await (JobModel.bulkWrite as any)(ops, { ordered: false });
+    if (ids.length) await JobModel.deleteMany({ id: { $nin: ids } });
+  },
 
-  getLogs: () => readJSON<any[]>("logs.json"),
-  saveLogs: (data: any[]) => writeJSON("logs.json", data),
+  async getWebsites(): Promise<any[]> {
+    await connectDB();
+    return WebsiteModel.find({}).select("-_id -__v").lean() as Promise<any[]>;
+  },
 
-  getScheduler: () => readJSON<any>("scheduler.json"),
-  saveScheduler: (data: any) => writeJSON("scheduler.json", data),
+  async saveWebsites(data: any[]): Promise<void> {
+    await connectDB();
+    await WebsiteModel.deleteMany({});
+    if (data.length) await WebsiteModel.insertMany(data, { ordered: false } as any);
+  },
+
+  async getLogs(): Promise<any[]> {
+    await connectDB();
+    return LogModel.find({}).select("-_id -__v").sort({ startTime: -1 }).lean() as Promise<any[]>;
+  },
+
+  async saveLogs(data: any[]): Promise<void> {
+    await connectDB();
+    await LogModel.deleteMany({});
+    if (data.length) await LogModel.insertMany(data, { ordered: false } as any);
+  },
+
+  async getScheduler(): Promise<any> {
+    await connectDB();
+    const doc = await SchedulerModel.findOne({ key: "config" }).select("-_id -__v -key").lean();
+    return doc || { ...DEFAULT_SCHEDULER };
+  },
+
+  async saveScheduler(data: any): Promise<void> {
+    await connectDB();
+    const { key: _k, ...rest } = data;
+    await SchedulerModel.updateOne(
+      { key: "config" },
+      { $set: { ...rest, key: "config" } },
+      { upsert: true }
+    );
+  },
 };

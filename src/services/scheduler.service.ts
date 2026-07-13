@@ -4,8 +4,8 @@ import { scrapeAll } from "./scraper.service";
 
 let currentTask: cron.ScheduledTask | null = null;
 
-export function startScheduler(): void {
-  const config = FileManager.getScheduler();
+export async function startScheduler(): Promise<void> {
+  const config = await FileManager.getScheduler();
   if (!config.enabled) return;
 
   if (currentTask) {
@@ -20,10 +20,9 @@ export function startScheduler(): void {
 
   currentTask = cron.schedule(config.cronExpression, async () => {
     console.log("[Scheduler] Starting scheduled scrape...");
-    const cfg = FileManager.getScheduler();
+    const cfg = await FileManager.getScheduler();
     cfg.lastRun = new Date().toISOString();
-    FileManager.saveScheduler(cfg);
-
+    await FileManager.saveScheduler(cfg);
     await scrapeAll();
     console.log("[Scheduler] Scheduled scrape complete.");
   });
@@ -31,27 +30,27 @@ export function startScheduler(): void {
   console.log(`[Scheduler] Started with expression: ${config.cronExpression}`);
 }
 
-export function stopScheduler(): void {
+export async function stopScheduler(): Promise<void> {
   if (currentTask) {
     currentTask.stop();
     currentTask = null;
   }
-  const config = FileManager.getScheduler();
+  const config = await FileManager.getScheduler();
   config.enabled = false;
-  FileManager.saveScheduler(config);
+  await FileManager.saveScheduler(config);
 }
 
-export function updateScheduler(updates: any): any {
-  const config = FileManager.getScheduler();
+export async function updateScheduler(updates: any): Promise<any> {
+  const config = await FileManager.getScheduler();
   const newConfig = { ...config, ...updates };
-  FileManager.saveScheduler(newConfig);
+  await FileManager.saveScheduler(newConfig);
 
   if (currentTask) {
     currentTask.stop();
     currentTask = null;
   }
   if (newConfig.enabled) {
-    startScheduler();
+    await startScheduler();
   }
   return newConfig;
 }

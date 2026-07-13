@@ -3,12 +3,12 @@ import { v4 as uuidv4 } from "uuid";
 import { FileManager } from "../utils/fileManager";
 import { parseWebsitesExcel } from "../services/export.service";
 
-export const getWebsites = (_req: Request, res: Response) => {
-  res.json(FileManager.getWebsites());
+export const getWebsites = async (_req: Request, res: Response) => {
+  res.json(await FileManager.getWebsites());
 };
 
-export const addWebsite = (req: Request, res: Response) => {
-  const websites = FileManager.getWebsites();
+export const addWebsite = async (req: Request, res: Response) => {
+  const websites = await FileManager.getWebsites();
   const newSite = {
     id: uuidv4(),
     url: req.body.url,
@@ -20,25 +20,25 @@ export const addWebsite = (req: Request, res: Response) => {
     errorMessage: null,
   };
   websites.push(newSite);
-  FileManager.saveWebsites(websites);
+  await FileManager.saveWebsites(websites);
   res.status(201).json(newSite);
 };
 
-export const deleteWebsite = (req: Request, res: Response) => {
-  const websites = FileManager.getWebsites();
+export const deleteWebsite = async (req: Request, res: Response) => {
+  const websites = await FileManager.getWebsites();
   const filtered = websites.filter((w: any) => w.id !== req.params.id);
-  FileManager.saveWebsites(filtered);
+  await FileManager.saveWebsites(filtered);
   res.json({ success: true });
 };
 
-export const uploadWebsites = (req: Request, res: Response) => {
+export const uploadWebsites = async (req: Request, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const newSites = parseWebsitesExcel(req.file.path);
-    const existing = FileManager.getWebsites();
+    const existing = await FileManager.getWebsites();
     const existingUrls = new Set(existing.map((w: any) => w.url));
     const toAdd = newSites.filter((s: any) => !existingUrls.has(s.url));
-    FileManager.saveWebsites([...existing, ...toAdd]);
+    await FileManager.saveWebsites([...existing, ...toAdd]);
     res.json({ added: toAdd.length, skipped: newSites.length - toAdd.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
