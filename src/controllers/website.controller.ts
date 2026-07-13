@@ -3,6 +3,16 @@ import { v4 as uuidv4 } from "uuid";
 import { FileManager } from "../utils/fileManager";
 import { parseWebsitesExcel } from "../services/export.service";
 
+export const updateWebsite = async (req: Request, res: Response) => {
+  try {
+    const updated = await FileManager.updateWebsite(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const getWebsites = async (_req: Request, res: Response) => {
   res.json(await FileManager.getWebsites());
 };
@@ -18,6 +28,7 @@ export const addWebsite = async (req: Request, res: Response) => {
     lastScraped: null,
     jobsFound: 0,
     errorMessage: null,
+    autoScrape: true,
   };
   websites.push(newSite);
   await FileManager.saveWebsites(websites);

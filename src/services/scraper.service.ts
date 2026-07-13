@@ -81,23 +81,16 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
   }
 
   if (jobs.length > 0) {
-    const jobSource = jobs[0]?.source as string | undefined;
-    const existing = await FileManager.getJobs();
-    if (jobSource) {
-      const kept = existing.filter((j: any) => j.source !== jobSource);
-      await FileManager.saveJobs([...jobs, ...kept]);
-    } else {
-      const existingTitles = new Set(existing.map((j: any) => j.title.toLowerCase()));
-      const newJobs = jobs.filter((j: any) => !existingTitles.has(j.title.toLowerCase()));
-      await FileManager.saveJobs([...newJobs, ...existing]);
-    }
+    await FileManager.smartSaveJobs(jobs);
   }
 
   return { success: !error, jobsFound: jobs.length, error };
 }
 
 export async function scrapeAll(): Promise<any> {
-  const websites = (await FileManager.getWebsites()).filter((w: any) => w.status !== "inactive");
+  const websites = (await FileManager.getWebsites()).filter(
+    (w: any) => w.status !== "inactive" && w.autoScrape !== false
+  );
   const results = { total: websites.length, success: 0, failed: 0, totalJobs: 0 };
 
   for (const website of websites) {

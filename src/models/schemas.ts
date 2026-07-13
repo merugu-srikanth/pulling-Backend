@@ -42,6 +42,10 @@ const jobSchema = new Schema({
   level:           String,
   language:        String,
   courseType:      String,
+  // change tracking
+  isUpdated:       { type: Boolean, default: false },
+  updatedFields:   [String],
+  previousValues:  { type: Schema.Types.Mixed, default: {} },
 }, { _id: false, strict: false });
 
 const websiteSchema = new Schema({
@@ -53,6 +57,7 @@ const websiteSchema = new Schema({
   lastScraped:  String,
   jobsFound:    Number,
   errorMessage: String,
+  autoScrape:   { type: Boolean, default: true },
 }, { _id: false });
 
 const logSchema = new Schema({
