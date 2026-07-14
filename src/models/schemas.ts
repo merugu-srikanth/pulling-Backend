@@ -42,6 +42,10 @@ const jobSchema = new Schema({
   level:           String,
   language:        String,
   courseType:      String,
+  // PM Internship specific
+  pmInsurance:        String,
+  pmTransport:        String,
+  pmHealthBenefits:   String,
   // change tracking
   isUpdated:       { type: Boolean, default: false },
   updatedFields:   [String],
