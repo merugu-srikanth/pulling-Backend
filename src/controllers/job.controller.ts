@@ -3,34 +3,18 @@ import { FileManager } from "../utils/fileManager";
 import { exportJobsToExcel, exportAICTEInternshipsToExcel, exportNPTELToExcel } from "../services/export.service";
 
 export const getJobs = async (req: Request, res: Response) => {
-  let jobs = await FileManager.getJobs();
-
   const { search, source, page = "1", limit = "20" } = req.query;
-
-  if (search) {
-    const q = String(search).toLowerCase();
-    jobs = jobs.filter(
-      (j: any) =>
-        j.title?.toLowerCase().includes(q) ||
-        j.organization?.toLowerCase().includes(q)
-    );
-  }
-
-  if (source) {
-    jobs = jobs.filter((j: any) => j.source === source);
-  }
-
-  const total = jobs.length;
-  const pageNum = parseInt(String(page), 10);
-  const limitNum = parseInt(String(limit), 10);
-  const paginated = jobs.slice((pageNum - 1) * limitNum, pageNum * limitNum);
-
-  res.json({ jobs: paginated, total, page: pageNum, limit: limitNum });
+  const { jobs, total } = await FileManager.getJobs({
+    search: search ? String(search) : undefined,
+    source: source ? String(source) : undefined,
+    page: parseInt(String(page), 10),
+    limit: parseInt(String(limit), 10),
+  });
+  res.json({ jobs, total, page: parseInt(String(page), 10), limit: parseInt(String(limit), 10) });
 };
 
 export const deleteJob = async (req: Request, res: Response) => {
-  const jobs = await FileManager.getJobs();
-  await FileManager.saveJobs(jobs.filter((j: any) => j.id !== req.params.id));
+  await FileManager.deleteJobById(req.params.id);
   res.json({ success: true });
 };
 
@@ -39,28 +23,23 @@ export const deleteJobsMany = async (req: Request, res: Response) => {
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids array required" });
   }
-  const idSet = new Set(ids);
-  const jobs = await FileManager.getJobs();
-  const remaining = jobs.filter((j: any) => !idSet.has(j.id));
-  await FileManager.saveJobs(remaining);
-  res.json({ deleted: jobs.length - remaining.length });
+  const deleted = await FileManager.deleteJobsByIds(ids);
+  res.json({ deleted });
 };
 
 export const deleteAllJobs = async (_req: Request, res: Response) => {
-  const jobs = await FileManager.getJobs();
-  await FileManager.saveJobs([]);
-  res.json({ deleted: jobs.length });
+  const deleted = await FileManager.deleteAllJobDocs();
+  res.json({ deleted });
 };
 
 export const getJobSources = async (_req: Request, res: Response) => {
-  const jobs = await FileManager.getJobs();
-  const sources = [...new Set(jobs.map((j: any) => j.source).filter(Boolean))].sort();
+  const sources = await FileManager.getJobSources();
   res.json(sources);
 };
 
 export const exportJobs = async (req: Request, res: Response) => {
   try {
-    let jobs = await FileManager.getJobs();
+    let jobs = await FileManager.getAllJobs();
     const { source } = req.query;
     if (source) jobs = jobs.filter((j: any) => j.source === String(source));
     const filePath = exportJobsToExcel(jobs);
@@ -72,7 +51,7 @@ export const exportJobs = async (req: Request, res: Response) => {
 
 export const exportAICTEJobs = async (req: Request, res: Response) => {
   try {
-    let jobs = await FileManager.getJobs();
+    let jobs = await FileManager.getAllJobs();
     const { source } = req.query;
     if (source) jobs = jobs.filter((j: any) => j.source === String(source));
     const filePath = exportAICTEInternshipsToExcel(jobs);
@@ -84,7 +63,7 @@ export const exportAICTEJobs = async (req: Request, res: Response) => {
 
 export const exportNPTELJobs = async (_req: Request, res: Response) => {
   try {
-    const jobs = await FileManager.getJobs();
+    const jobs = await FileManager.getAllJobs();
     const filePath = exportNPTELToExcel(jobs);
     res.download(filePath);
   } catch (err: any) {

@@ -13,9 +13,53 @@ const DEFAULT_SCHEDULER = {
 };
 
 export const FileManager = {
-  async getJobs(): Promise<any[]> {
+  async getJobs(opts: { search?: string; source?: string; page?: number; limit?: number } = {}): Promise<{ jobs: any[]; total: number }> {
+    await connectDB();
+    const { search, source, page = 1, limit = 20 } = opts;
+    const filter: any = {};
+    if (source) filter.source = source;
+    if (search) {
+      const re = new RegExp(search, "i");
+      filter.$or = [{ title: re }, { organization: re }];
+    }
+    const [jobs, total] = await Promise.all([
+      JobModel.find(filter).select("-_id -__v").skip((page - 1) * limit).limit(limit).lean(),
+      JobModel.countDocuments(filter),
+    ]);
+    return { jobs: jobs as any[], total };
+  },
+
+  async getAllJobs(): Promise<any[]> {
     await connectDB();
     return JobModel.find({}).select("-_id -__v").lean() as Promise<any[]>;
+  },
+
+  async countJobs(filter: any = {}): Promise<number> {
+    await connectDB();
+    return JobModel.countDocuments(filter);
+  },
+
+  async getJobSources(): Promise<string[]> {
+    await connectDB();
+    const sources = await JobModel.distinct("source");
+    return sources.filter(Boolean).sort() as string[];
+  },
+
+  async deleteJobById(id: string): Promise<void> {
+    await connectDB();
+    await JobModel.deleteOne({ id });
+  },
+
+  async deleteJobsByIds(ids: string[]): Promise<number> {
+    await connectDB();
+    const result = await JobModel.deleteMany({ id: { $in: ids } });
+    return result.deletedCount;
+  },
+
+  async deleteAllJobDocs(): Promise<number> {
+    await connectDB();
+    const result = await JobModel.deleteMany({});
+    return result.deletedCount;
   },
 
   async saveJobs(data: any[]): Promise<void> {

@@ -27,14 +27,14 @@ export const getLogs = async (_req: Request, res: Response) => {
 };
 
 export const getStats = async (_req: Request, res: Response) => {
-  const [jobs, websites, logs] = await Promise.all([
-    FileManager.getJobs(),
+  const today = new Date().toISOString().split("T")[0];
+  const [totalJobs, jobsToday, websites, logs] = await Promise.all([
+    FileManager.countJobs(),
+    FileManager.countJobs({ scrapedAt: { $regex: `^${today}` } }),
     FileManager.getWebsites(),
     FileManager.getLogs(),
   ]);
 
-  const today = new Date().toISOString().split("T")[0];
-  const todayJobs = jobs.filter((j: any) => j.scrapedAt?.startsWith(today));
   const successLogs = logs.filter((l: any) => l.status === "success");
   const lastRun = logs[0]?.startTime || null;
   const successRate = logs.length > 0
@@ -45,8 +45,8 @@ export const getStats = async (_req: Request, res: Response) => {
     totalWebsites: websites.length,
     activeWebsites: websites.filter((w: any) => w.status === "active").length,
     failedWebsites: websites.filter((w: any) => w.status === "error").length,
-    totalJobs: jobs.length,
-    jobsToday: todayJobs.length,
+    totalJobs,
+    jobsToday,
     successRate,
     lastRun,
   });
