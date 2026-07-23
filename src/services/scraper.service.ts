@@ -6,11 +6,17 @@ import { scrapeXML } from "./xmlScraper.service";
 import { scrapeAICTE, isAicteUrl, scrapeAICTERecent, isAicteRecentUrl } from "./aicteScraper.service";
 import { scrapeNPTEL, isNptelUrl } from "./nptelScraper.service";
 import { scrapePmInternship, isPmInternshipUrl } from "./pmInternshipScraper.service";
+import { scrapeSwayam, isSwayamUrl } from "./swayamScraper.service";
 
 async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null }> {
   try {
     if (isPmInternshipUrl(website.url)) {
       const jobs = await scrapePmInternship(website.url);
+      return { jobs, error: null };
+    }
+
+    if (isSwayamUrl(website.url)) {
+      const jobs = await scrapeSwayam(website.url);
       return { jobs, error: null };
     }
 
