@@ -30,8 +30,7 @@ async function ensureSuperAdminSeeded() {
   }
 }
 
-// Ensure seeded on start
-ensureSuperAdminSeeded();
+// Ensure seeded on start (removed to prevent blocking Vercel cold starts)
 
 // ─── Authentication APIs ───────────────────────────────────────────────────
 
