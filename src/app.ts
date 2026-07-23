@@ -9,11 +9,24 @@ import kanbanRoutes from "./routes/kanban.routes";
 import authRoutes from "./routes/auth.routes";
 import { authMiddleware, requirePermission } from "./middleware/auth.middleware";
 
+import { connectDB } from "./utils/db";
+
 const app = express();
 
 app.use(cors({ origin: "*", credentials: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Ensure Database connection is established for serverless environments (e.g. Vercel)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error: any) {
+    console.error("[MongoDB] Connection middleware failed:", error.message);
+    res.status(500).json({ error: "Database connection failed." });
+  }
+});
 
 /* ─── Swagger Spec ────────────────────────────────────────────────────────── */
 const swaggerSpec = {

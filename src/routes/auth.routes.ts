@@ -10,12 +10,12 @@ const JWT_SECRET = process.env.JWT_SECRET || "gov-vacancy-scraper-jwt-secret-key
 // Default Super Admin seeder helper
 async function ensureSuperAdminSeeded() {
   try {
-    const superAdmin = await AdminUserModel.findOne({ role: "super_admin" });
+    const superAdmin = await AdminUserModel.findOne({ email: "srikanthmerugu04@gmail.com" });
     if (!superAdmin) {
-      const hashedPassword = await bcrypt.hash("Password@123", 10);
+      const hashedPassword = await bcrypt.hash("SuperAdmin", 10);
       await AdminUserModel.create({
         name: "Super Admin",
-        email: "superadmin@company.com",
+        email: "srikanthmerugu04@gmail.com",
         password: hashedPassword,
         role: "super_admin",
         permissions: {
@@ -138,7 +138,7 @@ router.put("/auth/admins/:id", authMiddleware, requireSuperAdmin, async (req: Re
     }
 
     // Do not allow self-demoting of role or email change of the original super admin
-    if (admin.email === "superadmin@company.com" && role && role !== "super_admin") {
+    if (admin.email === "srikanthmerugu04@gmail.com" && role && role !== "super_admin") {
       return res.status(400).json({ error: "Cannot change the primary Super Admin role." });
     }
 
@@ -170,7 +170,7 @@ router.delete("/auth/admins/:id", authMiddleware, requireSuperAdmin, async (req:
       return res.status(404).json({ error: "Admin user not found." });
     }
 
-    if (admin.email === "superadmin@company.com") {
+    if (admin.email === "srikanthmerugu04@gmail.com") {
       return res.status(400).json({ error: "Cannot delete the primary Super Admin account." });
     }
 
