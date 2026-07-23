@@ -3,7 +3,6 @@ import * as cheerio from "cheerio";
 type CheerioStatic = ReturnType<typeof cheerio.load>;
 import { v4 as uuidv4 } from "uuid";
 import https from "https";
-import * as puppeteer from 'puppeteer';
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -96,15 +95,29 @@ export async function scrapeSwayam(listUrl: string): Promise<any[]> {
       const bodyText = $$('body').text().replace(/\s+/g, ' ').trim();
       if (bodyText.length < 80) {
         try {
-          const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-          const page = await browser.newPage();
-          await page.setUserAgent(HEADERS['User-Agent']);
-          await page.goto(cu, { waitUntil: 'networkidle2', timeout: 30000 });
-          // give client scripts a bit more time to populate content
-          await new Promise(r=>setTimeout(r, 1200));
+          let puppeteer: any = null;
+          if (!process.env.VERCEL) {
+            try {
+              puppeteer = await import('puppeteer');
+              puppeteer = puppeteer.default ?? puppeteer;
+            } catch {
+              puppeteer = null;
+            }
+          }
 
-          // try to extract structured fields directly from rendered page
-          const rendered = await page.evaluate(() => {
+          if (puppeteer) {
+            const browser = await puppeteer.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+            });
+            const page = await browser.newPage();
+            await page.setUserAgent(HEADERS['User-Agent']);
+            await page.goto(cu, { waitUntil: 'networkidle2', timeout: 30000 });
+            // give client scripts a bit more time to populate content
+            await new Promise(r=>setTimeout(r, 1200));
+
+            // try to extract structured fields directly from rendered page
+            const rendered = await page.evaluate(() => {
             const textOf = (el: Element | null) => el ? (el.textContent||'').trim() : '';
             const findByLabel = (lbl: string) => {
               const nodes = Array.from(document.querySelectorAll('*')).filter(n=> (n.textContent||'').toUpperCase().includes(lbl.toUpperCase()));
@@ -127,18 +140,19 @@ export async function scrapeSwayam(listUrl: string): Promise<any[]> {
           });
 
           // if we got significant rendered text, use it; otherwise fall back to raw HTML parse
-          if (rendered && (rendered.title || rendered.intended || rendered.lastDate)) {
-            // incorporate into $$ by injecting minimal HTML to allow downstream selectors
-            dhtml = await page.content();
-            $$ = cheerio.load(dhtml);
-            // stash extracted fields onto $$ namespace by setting variables (we'll reuse rendered values below)
-            ($$ as any).__rendered = rendered;
-          } else {
-            dhtml = await page.content();
-            $$ = cheerio.load(dhtml);
-          }
+            if (rendered && (rendered.title || rendered.intended || rendered.lastDate)) {
+              // incorporate into $$ by injecting minimal HTML to allow downstream selectors
+              dhtml = await page.content();
+              $$ = cheerio.load(dhtml);
+              // stash extracted fields onto $$ namespace by setting variables (we'll reuse rendered values below)
+              ($$ as any).__rendered = rendered;
+            } else {
+              dhtml = await page.content();
+              $$ = cheerio.load(dhtml);
+            }
 
-          await browser.close();
+            await browser.close();
+          }
         } catch (err) {
           // fallback: keep original $$
         }
