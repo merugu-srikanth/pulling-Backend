@@ -19,13 +19,17 @@ app.options("*", cors({ origin: true, credentials: true }));
 
 // Ensure CORS headers are present on all responses (defensive for serverless platforms)
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else {
+    res.header("Access-Control-Allow-Origin", "*");
+  }
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-CSRF-Token, X-Api-Version"
   );
-  // Allow credentials if needed
   res.header("Access-Control-Allow-Credentials", "true");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
