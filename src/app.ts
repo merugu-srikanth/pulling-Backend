@@ -7,7 +7,7 @@ import jobRoutes from "./routes/job.routes";
 import settingsRoutes from "./routes/settings.routes";
 import kanbanRoutes from "./routes/kanban.routes";
 import authRoutes from "./routes/auth.routes";
-import { authMiddleware, requirePermission } from "./middleware/auth.middleware";
+import { authMiddleware, permissionMiddleware } from "./middleware/auth.middleware";
 
 import { connectDB } from "./utils/db";
 
@@ -449,11 +449,12 @@ app.get("/api-docs.json", (_req, res) => res.json(swaggerSpec));
 
 /* ─── Routes ──────────────────────────────────────────────────────────────── */
 app.use("/api", authRoutes);
-app.use("/api", authMiddleware, requirePermission("scraping"), scrapeRoutes);
-app.use("/api", authMiddleware, requirePermission("scraping"), websiteRoutes);
-app.use("/api", authMiddleware, requirePermission("scraping"), jobRoutes);
-app.use("/api", authMiddleware, requirePermission("scraping"), settingsRoutes);
-app.use("/api", authMiddleware, requirePermission("task_manager"), kanbanRoutes);
+app.use("/api", authMiddleware, permissionMiddleware);
+app.use("/api", scrapeRoutes);
+app.use("/api", websiteRoutes);
+app.use("/api", jobRoutes);
+app.use("/api", settingsRoutes);
+app.use("/api", kanbanRoutes);
 
 app.get("/health", (_req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
 

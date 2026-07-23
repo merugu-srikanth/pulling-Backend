@@ -53,3 +53,47 @@ export function requirePermission(permission: "scraping" | "task_manager") {
     return res.status(403).json({ error: `Access denied. Requires '${permission}' permission.` });
   };
 }
+
+export function permissionMiddleware(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user;
+  if (!user) {
+    return res.status(401).json({ error: "Authentication required." });
+  }
+
+  // Super Admin bypasses all checks
+  if (user.role === "super_admin") {
+    return next();
+  }
+
+  const path = req.path;
+
+  const isKanbanRoute = 
+    path.startsWith("/tasks") ||
+    path.startsWith("/kanban") ||
+    path.startsWith("/daily-report") ||
+    path.startsWith("/dashboard/task-summary");
+
+  if (isKanbanRoute) {
+    if (user.permissions && user.permissions.task_manager === true) {
+      return next();
+    }
+    return res.status(403).json({ error: "Access denied. Requires 'task_manager' permission." });
+  }
+
+  const isScraperRoute =
+    path.startsWith("/websites") ||
+    path.startsWith("/scrape") ||
+    path.startsWith("/jobs") ||
+    path.startsWith("/settings") ||
+    path.startsWith("/stats") ||
+    path.startsWith("/logs");
+
+  if (isScraperRoute) {
+    if (user.permissions && user.permissions.scraping === true) {
+      return next();
+    }
+    return res.status(403).json({ error: "Access denied. Requires 'scraping' permission." });
+  }
+
+  next();
+}
