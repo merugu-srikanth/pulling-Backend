@@ -13,7 +13,23 @@ import { connectDB } from "./utils/db";
 
 const app = express();
 
-app.use(cors({ origin: "*", credentials: false }));
+// Allow cross-origin requests from any origin and handle preflight explicitly
+app.use(cors({ origin: true, credentials: true }));
+app.options("*", cors({ origin: true, credentials: true }));
+
+// Ensure CORS headers are present on all responses (defensive for serverless platforms)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  // Allow credentials if needed
+  res.header("Access-Control-Allow-Credentials", "true");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
