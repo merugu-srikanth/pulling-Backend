@@ -1,7 +1,9 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+type CheerioStatic = ReturnType<typeof cheerio.load>;
 import { v4 as uuidv4 } from "uuid";
 import https from "https";
+import * as puppeteer from 'puppeteer';
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -41,7 +43,7 @@ function parseDateFromText(text: string): string {
   return "";
 }
 
-function extractBetweenLabel($: cheerio.CheerioAPI, label: string): string {
+function extractBetweenLabel($: CheerioStatic, label: string): string {
   // Find element containing the label text, then read next siblings / paragraphs
   const el = $(`*:contains("${label}")`).filter((_, e) => $(e).text().trim().toUpperCase().includes(label)).first();
   if (!el || !el.length) return "";
@@ -75,22 +77,10 @@ export async function scrapeSwayam(listUrl: string): Promise<any[]> {
   // Strategy B: look for JS-driven load-more XHR endpoints inside scripts
   if (seen.size < 5) {
     const scriptText = $('script').map((i, s) => $(s).html() || '').get().join('\n');
-    const apiUrls = Array.from(new Set((scriptText.match(/https?:\\/\\/[^'"\s\)]+/g) || []).map(s => s.replace(/\\/g, ''))));
-    for (const candidate of apiUrls) {
-      if (/explorer|onlinecourses|preview|search|course|api/i.test(candidate)) {
-        try {
-          const data = await axios.get(candidate, { headers: { ...HEADERS, Accept: 'application/json' }, timeout: 10000 }).then(r => r.data).catch(() => null);
-          if (data) {
-            // attempt to find urls inside returned JSON
-            const s = JSON.stringify(data);
-            const matches = s.match(/https?:\\/\\/[^\"]+/g) || [];
-            matches.forEach(m => {
-              const u = m.replace(/\\/g,'');
-              if (/onlinecourses\.swayam2\.ac\.in|swayam2|swayam\.gov\.in|preview|course\//i.test(u)) seen.add(u);
-            });
-          }
-        } catch (_) {}
-      }
+    // Extract explicit preview URLs present inside scripts (these are static strings)
+    const scriptMatches = scriptText.match(/https?:\/\/onlinecourses\.swayam2\.ac\.in\/[A-Za-z0-9_\-]+(?:\/[A-Za-z0-9_\-]+)*\/preview/g) || [];
+    for (const m of Array.from(new Set(scriptMatches))) {
+      seen.add(m);
     }
   }
 
@@ -99,17 +89,71 @@ export async function scrapeSwayam(listUrl: string): Promise<any[]> {
 
   for (const cu of courseUrls) {
     try {
-      const dhtml = await fetchHtml(cu);
-      const $$ = cheerio.load(dhtml);
+      let dhtml = await fetchHtml(cu);
+      let $$ = cheerio.load(dhtml);
 
-      const title = $$('h1, h2').first().text().trim() || $$('title').text().trim();
-      const instructor = $$('*:contains("By")').filter((_, e) => $$(e).text().trim().startsWith('By')).first().text().replace(/^By\s*/i, '').trim();
+      // If server HTML is mostly empty (client-rendered), use headless browser to render
+      const bodyText = $$('body').text().replace(/\s+/g, ' ').trim();
+      if (bodyText.length < 80) {
+        try {
+          const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+          const page = await browser.newPage();
+          await page.setUserAgent(HEADERS['User-Agent']);
+          await page.goto(cu, { waitUntil: 'networkidle2', timeout: 30000 });
+          // give client scripts a bit more time to populate content
+          await new Promise(r=>setTimeout(r, 1200));
+
+          // try to extract structured fields directly from rendered page
+          const rendered = await page.evaluate(() => {
+            const textOf = (el: Element | null) => el ? (el.textContent||'').trim() : '';
+            const findByLabel = (lbl: string) => {
+              const nodes = Array.from(document.querySelectorAll('*')).filter(n=> (n.textContent||'').toUpperCase().includes(lbl.toUpperCase()));
+              if (!nodes.length) return '';
+              const n = nodes[0] as Element;
+              if (n.nextElementSibling) return textOf(n.nextElementSibling);
+              const strong = Array.from(n.querySelectorAll('strong,b')).find(s=> (s.textContent||'').toUpperCase().includes(lbl.toUpperCase()));
+              if (strong) return textOf(strong.parentElement);
+              return textOf(n).replace(new RegExp(lbl, 'i'), '').trim();
+            };
+
+            const title = textOf(document.querySelector('h1') || document.querySelector('h2')) || document.title || '';
+            const instructorNode = Array.from(document.querySelectorAll('*')).find(e=> (e.textContent||'').trim().startsWith('By')) as Element | undefined;
+            const instructor = instructorNode ? ((instructorNode.textContent||'').replace(/^By\s*/i,'').trim()) : '';
+            const intended = findByLabel('INTENDED AUDIENCE');
+            const align = findByLabel('Indicative Program Alignments');
+            const body = (document.body && document.body.innerText) || '';
+            const ld = (body.match(/Enrollment Ends?[:\s]+([^\n]{4,50})/i) || [])[1] || '';
+            return { title, instructor, intended, align, lastDate: ld };
+          });
+
+          // if we got significant rendered text, use it; otherwise fall back to raw HTML parse
+          if (rendered && (rendered.title || rendered.intended || rendered.lastDate)) {
+            // incorporate into $$ by injecting minimal HTML to allow downstream selectors
+            dhtml = await page.content();
+            $$ = cheerio.load(dhtml);
+            // stash extracted fields onto $$ namespace by setting variables (we'll reuse rendered values below)
+            ($$ as any).__rendered = rendered;
+          } else {
+            dhtml = await page.content();
+            $$ = cheerio.load(dhtml);
+          }
+
+          await browser.close();
+        } catch (err) {
+          // fallback: keep original $$
+        }
+      }
+
+      // Check for rendered payload from puppeteer
+      const rendered: any = ($$ as any).__rendered || null;
+      const title = (rendered && rendered.title) || $$('h1, h2').first().text().trim() || $$('title').text().trim();
+      const instructor = (rendered && rendered.instructor) || $$('*:contains("By")').filter((_, e) => $$(e).text().trim().startsWith('By')).first().text().replace(/^By\s*/i, '').trim();
       const org = $$('meta[name="author"]').attr('content') || $$('a[href*="/institute"], .institute, .provider').first().text().trim();
-      const bodyText = $$.text();
+      const pageText = $$('body').text();
 
-      const intended = (extractBetweenLabel($$, 'INTENDED AUDIENCE') || (bodyText.match(/INTENDED AUDIENCE[:\s]*([A-Za-z0-9,\.\s]+)/i) || [])[1] || '').replace(/[:\n]+/g,'').trim();
-      const align = (extractBetweenLabel($$, 'Indicative Program Alignments') || (bodyText.match(/Indicative Program Alignments[:\s]*([A-Za-z0-9,\.,\-\s]+)/i) || [])[1] || '').replace(/[:\n]+/g,'').trim();
-      const lastDate = parseDateFromText(bodyText) || '';
+      const intended = (rendered && rendered.intended) || (extractBetweenLabel($$, 'INTENDED AUDIENCE') || (pageText.match(/INTENDED AUDIENCE[:\s]*([A-Za-z0-9,\.\s]+)/i) || [])[1] || '').replace(/[:\n]+/g,'').trim();
+      const align = (rendered && rendered.align) || (extractBetweenLabel($$, 'Indicative Program Alignments') || (pageText.match(/Indicative Program Alignments[:\s]*([A-Za-z0-9,\.,\-\s]+)/i) || [])[1] || '').replace(/[:\n]+/g,'').trim();
+      const lastDate = (rendered && rendered.lastDate) || parseDateFromText(pageText) || '';
 
       // filter out expired if possible
       let isExpired = false;
