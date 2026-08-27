@@ -61,14 +61,14 @@ async function fetchWithConditionalHeaders(url: string, etag: string | null, las
   }
 }
 
-async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null; skipped: boolean }> {
+async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null; skipped: boolean; promptTokens: number; completionTokens: number }> {
   try {
     // Level 1: HTTP Conditional Requests
     const fetchResult = await fetchWithConditionalHeaders(website.url, website.etag, website.lastModified);
     
     if (fetchResult.status === 304) {
       console.log(`[Scraper] 304 Not Modified for ${website.url}. Skipping.`);
-      return { jobs: [], error: null, skipped: true };
+      return { jobs: [], error: null, skipped: true, promptTokens: 0, completionTokens: 0 };
     }
 
     const rawHtml = fetchResult.data;
@@ -82,7 +82,7 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
         etag: fetchResult.etag || website.etag,
         lastModified: fetchResult.lastModified || website.lastModified,
       });
-      return { jobs: [], error: null, skipped: true };
+      return { jobs: [], error: null, skipped: true, promptTokens: 0, completionTokens: 0 };
     }
 
     // Support XML sitemaps or feeds directly
@@ -94,7 +94,7 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
         etag: fetchResult.etag,
         lastModified: fetchResult.lastModified,
       });
-      return { jobs, error: null, skipped: false };
+      return { jobs, error: null, skipped: false, promptTokens: 0, completionTokens: 0 };
     }
 
     // Level 2: Clean text hash checking
@@ -109,7 +109,7 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
         etag: fetchResult.etag || website.etag,
         lastModified: fetchResult.lastModified || website.lastModified,
       });
-      return { jobs: [], error: null, skipped: true };
+      return { jobs: [], error: null, skipped: true, promptTokens: 0, completionTokens: 0 };
     }
 
     // Level 3: Meaningful opportunity content hash checking
@@ -123,7 +123,7 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
         etag: fetchResult.etag || website.etag,
         lastModified: fetchResult.lastModified || website.lastModified,
       });
-      return { jobs: [], error: null, skipped: true };
+      return { jobs: [], error: null, skipped: true, promptTokens: 0, completionTokens: 0 };
     }
 
     // Level 4: Keyword Relevance Filter
@@ -137,12 +137,12 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
         etag: fetchResult.etag,
         lastModified: fetchResult.lastModified,
       });
-      return { jobs: [], error: null, skipped: true };
+      return { jobs: [], error: null, skipped: true, promptTokens: 0, completionTokens: 0 };
     }
 
     // Level 5: OpenAI Structured Extraction
     console.log(`[Scraper] Page changed & relevant. Calling OpenAI Structured Outputs for: ${website.url}`);
-    const jobs = await extractOpportunitiesWithAI(website.url, cleanText);
+    const { jobs, usage } = await extractOpportunitiesWithAI(website.url, cleanText);
 
     // Save success metadata on the website
     await FileManager.updateWebsite(website.id, {
@@ -153,9 +153,9 @@ async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | n
       lastModified: fetchResult.lastModified,
     });
 
-    return { jobs, error: null, skipped: false };
+    return { jobs, error: null, skipped: false, promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens };
   } catch (err: any) {
-    return { jobs: [], error: err.message || "Unknown error during AI scraping", skipped: false };
+    return { jobs: [], error: err.message || "Unknown error during AI scraping", skipped: false, promptTokens: 0, completionTokens: 0 };
   }
 }
 
@@ -173,18 +173,22 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
     status: "running",
     jobsFound: 0,
     errorMessage: null,
+    promptTokens: 0,
+    completionTokens: 0,
   };
 
   const logs = await FileManager.getLogs();
   logs.unshift(logEntry);
   await FileManager.saveLogs(logs);
 
-  const { jobs, error, skipped } = await scrapeOne(website);
+  const { jobs, error, skipped, promptTokens, completionTokens } = await scrapeOne(website);
 
   logEntry.endTime = new Date().toISOString();
   logEntry.status = error ? "failed" : (skipped ? "skipped" : "success");
   logEntry.jobsFound = jobs.length;
   logEntry.errorMessage = error;
+  logEntry.promptTokens = promptTokens;
+  logEntry.completionTokens = completionTokens;
 
   const updatedLogs = await FileManager.getLogs();
   const logIdx = updatedLogs.findIndex((l: any) => l.id === logEntry.id);
@@ -211,7 +215,7 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
     await OpportunityDedupService.handleRemovedOpportunities(website.url, activeIds);
   }
 
-  return { success: !error, jobsFound: jobs.length, skipped, error };
+  return { success: !error, jobsFound: jobs.length, skipped, error, promptTokens, completionTokens };
 }
 
 export async function scrapeAll(): Promise<any> {

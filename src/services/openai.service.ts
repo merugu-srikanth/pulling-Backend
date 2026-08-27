@@ -138,8 +138,9 @@ Extract all matching opportunities according to the schema rules.`;
 
     const result = JSON.parse(response.data.choices[0].message.content || "{}");
     const rawOps = result.opportunities || [];
+    const usage = response.data.usage || { prompt_tokens: 0, completion_tokens: 0 };
     
-    return rawOps
+    const jobs = rawOps
       .filter((op: any) => op.internship_relevance_score >= 40)
       .map((op: any) => {
         return {
@@ -185,6 +186,8 @@ Extract all matching opportunities according to the schema rules.`;
           evidence: op.evidence
         };
       });
+
+    return { jobs, usage };
   } catch (err: any) {
     console.error("[OpenAI] Structured Outputs call failed:", err.message);
     throw new Error(`AI extraction failed: ${err.message}`);

@@ -95,14 +95,16 @@ const websiteSchema = new Schema({
 }, { _id: false });
 
 const logSchema = new Schema({
-  id:           { type: String, required: true, unique: true },
-  websiteId:    String,
-  websiteUrl:   String,
-  startTime:    String,
-  endTime:      String,
-  status:       String,
-  jobsFound:    Number,
-  errorMessage: String,
+  id:               { type: String, required: true, unique: true },
+  websiteId:        String,
+  websiteUrl:       String,
+  startTime:        String,
+  endTime:          String,
+  status:           String,
+  jobsFound:        Number,
+  errorMessage:     String,
+  promptTokens:     { type: Number, default: 0 },
+  completionTokens: { type: Number, default: 0 },
 }, { _id: false });
 
 const schedulerSchema = new Schema({
