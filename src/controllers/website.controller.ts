@@ -42,6 +42,15 @@ export const deleteWebsite = async (req: Request, res: Response) => {
   res.json({ success: true });
 };
 
+export const deleteAllWebsites = async (_req: Request, res: Response) => {
+  try {
+    await FileManager.saveWebsites([]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const uploadWebsites = async (req: Request, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });

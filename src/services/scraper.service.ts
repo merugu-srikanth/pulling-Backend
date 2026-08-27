@@ -1,52 +1,161 @@
 import { v4 as uuidv4 } from "uuid";
+import axios from "axios";
+import https from "https";
 import { FileManager } from "../utils/fileManager";
-import { detectType } from "../utils/detector";
-import { scrapeHTML } from "./htmlScraper.service";
+import { ContentExtractor } from "./content-extractor.service";
+import { OpportunityValidator } from "./opportunity-validator.service";
+import { ChangeDetectionService } from "./change-detection.service";
+import { OpportunityDedupService } from "./opportunity-dedup.service";
+import { extractOpportunitiesWithAI } from "./openai.service";
 import { scrapeXML } from "./xmlScraper.service";
-import { scrapeAICTE, isAicteUrl, scrapeAICTERecent, isAicteRecentUrl } from "./aicteScraper.service";
-import { scrapeNPTEL, isNptelUrl } from "./nptelScraper.service";
-import { scrapePmInternship, isPmInternshipUrl } from "./pmInternshipScraper.service";
-import { scrapeSwayam, isSwayamUrl } from "./swayamScraper.service";
 
-async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null }> {
+const LOOSE_TLS_AGENT = new https.Agent({ rejectUnauthorized: false });
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+interface FetchResult {
+  status: number;
+  data: string;
+  etag: string | null;
+  lastModified: string | null;
+}
+
+async function fetchWithConditionalHeaders(url: string, etag: string | null, lastModified: string | null): Promise<FetchResult> {
+  const headers: any = { ...HEADERS };
+  if (etag) headers["If-None-Match"] = etag;
+  if (lastModified) headers["If-Modified-Since"] = lastModified;
+
   try {
-    if (isPmInternshipUrl(website.url)) {
-      const jobs = await scrapePmInternship(website.url);
-      return { jobs, error: null };
+    const response = await axios.get(url, {
+      headers,
+      timeout: 30000,
+      maxRedirects: 5,
+      validateStatus: (status) => status === 200 || status === 304,
+    });
+
+    return {
+      status: response.status,
+      data: response.status === 304 ? "" : (typeof response.data === "string" ? response.data : JSON.stringify(response.data)),
+      etag: response.headers["etag"] || null,
+      lastModified: response.headers["last-modified"] || null,
+    };
+  } catch (err) {
+    // Retry with loose TLS
+    const response = await axios.get(url, {
+      headers,
+      timeout: 30000,
+      maxRedirects: 5,
+      httpsAgent: LOOSE_TLS_AGENT,
+      validateStatus: (status) => status === 200 || status === 304,
+    });
+
+    return {
+      status: response.status,
+      data: response.status === 304 ? "" : (typeof response.data === "string" ? response.data : JSON.stringify(response.data)),
+      etag: response.headers["etag"] || null,
+      lastModified: response.headers["last-modified"] || null,
+    };
+  }
+}
+
+async function scrapeOne(website: any): Promise<{ jobs: any[]; error: string | null; skipped: boolean }> {
+  try {
+    // Level 1: HTTP Conditional Requests
+    const fetchResult = await fetchWithConditionalHeaders(website.url, website.etag, website.lastModified);
+    
+    if (fetchResult.status === 304) {
+      console.log(`[Scraper] 304 Not Modified for ${website.url}. Skipping.`);
+      return { jobs: [], error: null, skipped: true };
     }
 
-    if (isSwayamUrl(website.url)) {
-      const jobs = await scrapeSwayam(website.url);
-      return { jobs, error: null };
+    const rawHtml = fetchResult.data;
+
+    // Check if raw HTML matches previous raw content hash
+    const rawHash = ChangeDetectionService.generateHash(rawHtml);
+    if (website.rawContentHash && rawHash === website.rawContentHash) {
+      console.log(`[Scraper] Raw content hash matches for ${website.url}. Skipping.`);
+      // Update conditional headers if returned new ones
+      await FileManager.updateWebsite(website.id, {
+        etag: fetchResult.etag || website.etag,
+        lastModified: fetchResult.lastModified || website.lastModified,
+      });
+      return { jobs: [], error: null, skipped: true };
     }
 
-    if (isNptelUrl(website.url)) {
-      const jobs = await scrapeNPTEL(website.url);
-      return { jobs, error: null };
+    // Support XML sitemaps or feeds directly
+    const isXml = website.url.endsWith(".xml") || website.url.includes("sitemap") || website.type === "xml";
+    if (isXml) {
+      const jobs = await scrapeXML(website.url);
+      await FileManager.updateWebsite(website.id, {
+        rawContentHash: rawHash,
+        etag: fetchResult.etag,
+        lastModified: fetchResult.lastModified,
+      });
+      return { jobs, error: null, skipped: false };
     }
 
-    if (isAicteRecentUrl(website.url)) {
-      const jobs = await scrapeAICTERecent(website.url);
-      return { jobs, error: null };
+    // Level 2: Clean text hash checking
+    const cleanText = ContentExtractor.cleanHtmlToText(rawHtml);
+    const cleanHash = ChangeDetectionService.generateHash(cleanText);
+
+    if (website.cleanContentHash && cleanHash === website.cleanContentHash) {
+      console.log(`[Scraper] Clean content hash matches for ${website.url}. Skipping.`);
+      await FileManager.updateWebsite(website.id, {
+        rawContentHash: rawHash,
+        cleanContentHash: cleanHash,
+        etag: fetchResult.etag || website.etag,
+        lastModified: fetchResult.lastModified || website.lastModified,
+      });
+      return { jobs: [], error: null, skipped: true };
     }
 
-    if (isAicteUrl(website.url)) {
-      const jobs = await scrapeAICTE(website.url);
-      return { jobs, error: null };
+    // Level 3: Meaningful opportunity content hash checking
+    const { changed: opChanged, hash: opHash } = ChangeDetectionService.hasOpportunityChanged(cleanText, website.opportunityContentHash);
+    if (!opChanged) {
+      console.log(`[Scraper] Opportunity content hash matches for ${website.url}. Skipping.`);
+      await FileManager.updateWebsite(website.id, {
+        rawContentHash: rawHash,
+        cleanContentHash: cleanHash,
+        opportunityContentHash: opHash,
+        etag: fetchResult.etag || website.etag,
+        lastModified: fetchResult.lastModified || website.lastModified,
+      });
+      return { jobs: [], error: null, skipped: true };
     }
 
-    let type = website.type;
-    if (type === "auto") {
-      type = await detectType(website.url);
+    // Level 4: Keyword Relevance Filter
+    const relevant = OpportunityValidator.isRelevant(cleanText);
+    if (!relevant) {
+      console.log(`[Scraper] Page content is not relevant based on keyword dictionary: ${website.url}. Skipping.`);
+      await FileManager.updateWebsite(website.id, {
+        rawContentHash: rawHash,
+        cleanContentHash: cleanHash,
+        opportunityContentHash: opHash,
+        etag: fetchResult.etag,
+        lastModified: fetchResult.lastModified,
+      });
+      return { jobs: [], error: null, skipped: true };
     }
 
-    const jobs = type === "xml"
-      ? await scrapeXML(website.url)
-      : await scrapeHTML(website.url);
+    // Level 5: OpenAI Structured Extraction
+    console.log(`[Scraper] Page changed & relevant. Calling OpenAI Structured Outputs for: ${website.url}`);
+    const jobs = await extractOpportunitiesWithAI(website.url, cleanText);
 
-    return { jobs, error: null };
+    // Save success metadata on the website
+    await FileManager.updateWebsite(website.id, {
+      rawContentHash: rawHash,
+      cleanContentHash: cleanHash,
+      opportunityContentHash: opHash,
+      etag: fetchResult.etag,
+      lastModified: fetchResult.lastModified,
+    });
+
+    return { jobs, error: null, skipped: false };
   } catch (err: any) {
-    return { jobs: [], error: err.message || "Unknown error" };
+    return { jobs: [], error: err.message || "Unknown error during AI scraping", skipped: false };
   }
 }
 
@@ -70,10 +179,10 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
   logs.unshift(logEntry);
   await FileManager.saveLogs(logs);
 
-  const { jobs, error } = await scrapeOne(website);
+  const { jobs, error, skipped } = await scrapeOne(website);
 
   logEntry.endTime = new Date().toISOString();
-  logEntry.status = error ? "failed" : "success";
+  logEntry.status = error ? "failed" : (skipped ? "skipped" : "success");
   logEntry.jobsFound = jobs.length;
   logEntry.errorMessage = error;
 
@@ -92,24 +201,37 @@ export async function scrapeWebsite(websiteId: string): Promise<any> {
     await FileManager.saveWebsites(allWebsites);
   }
 
+  let activeIds: string[] = [];
   if (jobs.length > 0) {
-    await FileManager.smartSaveJobs(jobs);
+    activeIds = await OpportunityDedupService.deduplicateAndSave(jobs);
+  }
+  
+  // Clean up any previously open opportunities from this source that are no longer listed
+  if (!error && !skipped) {
+    await OpportunityDedupService.handleRemovedOpportunities(website.url, activeIds);
   }
 
-  return { success: !error, jobsFound: jobs.length, error };
+  return { success: !error, jobsFound: jobs.length, skipped, error };
 }
 
 export async function scrapeAll(): Promise<any> {
+  // First expire any past deadlines automatically using deterministic logic
+  await OpportunityDedupService.expireJobsWithPassedDeadlines();
+
   const websites = (await FileManager.getWebsites()).filter(
     (w: any) => w.status !== "inactive" && w.autoScrape !== false
   );
-  const results = { total: websites.length, success: 0, failed: 0, totalJobs: 0 };
+  const results = { total: websites.length, success: 0, failed: 0, skipped: 0, totalJobs: 0 };
 
   for (const website of websites) {
     const result = await scrapeWebsite(website.id);
     if (result.success) {
-      results.success++;
-      results.totalJobs += result.jobsFound;
+      if (result.skipped) {
+        results.skipped++;
+      } else {
+        results.success++;
+        results.totalJobs += result.jobsFound;
+      }
     } else {
       results.failed++;
     }

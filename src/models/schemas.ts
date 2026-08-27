@@ -10,7 +10,34 @@ const jobSchema = new Schema({
   applyLink:      String,
   source:         String,
   scrapedAt:      String,
-  // AICTE fields
+  
+  // Advanced change tracking & cache headers
+  rawContentHash:         String,
+  cleanContentHash:       String,
+  opportunityContentHash: String,
+  etag:                   String,
+  lastModified:           String,
+  firstSeen:              String,
+  lastSeen:               String,
+  lastVerified:           String,
+  lastChanged:            String,
+  lastAIProcessed:        String,
+  changeType:             { type: String, default: "NEW" },
+  isUpdated:              { type: Boolean, default: false },
+  previousValues:         { type: Schema.Types.Mixed, default: {} },
+  evidence:               { type: Schema.Types.Mixed, default: {} },
+  
+  // AI status tracking
+  aiStatus:               { type: String, enum: ["PENDING", "PROCESSED", "FAILED", "RETRY"], default: "PENDING" },
+  retryCount:             { type: Number, default: 0 },
+  lastError:              String,
+
+  // UI status, deadline & links
+  status:                 String,
+  deadline:               String,
+  applicationUrl:         String,
+
+  // Legacy/AICTE fields compatibility
   internshipType:    String,
   location:          String,
   state:             String,
@@ -46,22 +73,25 @@ const jobSchema = new Schema({
   pmInsurance:        String,
   pmTransport:        String,
   pmHealthBenefits:   String,
-  // change tracking
-  isUpdated:       { type: Boolean, default: false },
-  updatedFields:   [String],
-  previousValues:  { type: Schema.Types.Mixed, default: {} },
 }, { _id: false, strict: false });
 
 const websiteSchema = new Schema({
-  id:           { type: String, required: true, unique: true },
-  url:          String,
-  name:         String,
-  type:         String,
-  status:       String,
-  lastScraped:  String,
-  jobsFound:    Number,
-  errorMessage: String,
-  autoScrape:   { type: Boolean, default: true },
+  id:                     { type: String, required: true, unique: true },
+  url:                    String,
+  name:                   String,
+  type:                   String,
+  status:                 String,
+  lastScraped:            String,
+  jobsFound:              Number,
+  errorMessage:           String,
+  autoScrape:             { type: Boolean, default: true },
+  
+  // Cache and change tracking
+  etag:                   String,
+  lastModified:           String,
+  rawContentHash:         String,
+  cleanContentHash:       String,
+  opportunityContentHash: String,
 }, { _id: false });
 
 const logSchema = new Schema({

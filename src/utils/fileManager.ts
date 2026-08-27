@@ -13,15 +13,33 @@ const DEFAULT_SCHEDULER = {
 };
 
 export const FileManager = {
-  async getJobs(opts: { search?: string; source?: string; page?: number; limit?: number } = {}): Promise<{ jobs: any[]; total: number }> {
+  async getJobs(opts: { search?: string; source?: string; page?: number; limit?: number; opportunityCategory?: string } = {}): Promise<{ jobs: any[]; total: number }> {
     await connectDB();
-    const { search, source, page = 1, limit = 20 } = opts;
+    const { search, source, page = 1, limit = 20, opportunityCategory } = opts;
     const filter: any = {};
     if (source) filter.source = source;
     if (search) {
       const re = new RegExp(search, "i");
       filter.$or = [{ title: re }, { organization: re }];
     }
+
+    const internshipTypes = ["Internship", "Student Training", "Research Internship", "Project Training", "Student Project", "Fellowship", "Apprenticeship", "Trainee", "Other Student Opportunity"];
+    if (opportunityCategory === "internship") {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { opportunityType: { $in: internshipTypes } },
+          { internshipType: { $exists: true, $ne: null } }
+        ]
+      });
+    } else if (opportunityCategory === "job") {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        opportunityType: { $nin: internshipTypes },
+        internshipType: { $exists: false }
+      });
+    }
+
     const [jobs, total] = await Promise.all([
       JobModel.find(filter).select("-_id -__v").skip((page - 1) * limit).limit(limit).lean(),
       JobModel.countDocuments(filter),

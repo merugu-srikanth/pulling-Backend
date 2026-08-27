@@ -3,12 +3,13 @@ import { FileManager } from "../utils/fileManager";
 import { exportJobsToExcel, exportAICTEInternshipsToExcel, exportNPTELToExcel } from "../services/export.service";
 
 export const getJobs = async (req: Request, res: Response) => {
-  const { search, source, page = "1", limit = "20" } = req.query;
+  const { search, source, page = "1", limit = "20", opportunityCategory } = req.query;
   const { jobs, total } = await FileManager.getJobs({
     search: search ? String(search) : undefined,
     source: source ? String(source) : undefined,
     page: parseInt(String(page), 10),
     limit: parseInt(String(limit), 10),
+    opportunityCategory: opportunityCategory ? String(opportunityCategory) : undefined,
   });
   res.json({ jobs, total, page: parseInt(String(page), 10), limit: parseInt(String(limit), 10) });
 };

@@ -6,6 +6,7 @@ dns.setDefaultResultOrder("ipv4first");
 import { connectDB } from "./utils/db";
 import app from "./app";
 import { startScheduler } from "./services/scheduler.service";
+import { WebsiteModel } from "./models/schemas";
 
 const PORT = process.env.PORT || 5000;
 
